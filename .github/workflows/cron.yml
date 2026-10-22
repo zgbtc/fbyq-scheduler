@@ -1,0 +1,48 @@
+name: Daily Triggers
+
+on:
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: 'Optional content type (intelligence/gainers/leaders/rising/otc/hooks/wealth)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Validate the flow without publishing'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call trigger endpoint
+        env:
+          BASE_URL: ${{ secrets.FBYQ_BASE_URL }}
+          TRIGGER_TOKEN: ${{ secrets.FBYQ_TRIGGER_TOKEN }}
+          KIND_INPUT: ${{ github.event.inputs.kind }}
+          DRY_RUN_INPUT: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -e
+          if [ -z "$BASE_URL" ] || [ -z "$TRIGGER_TOKEN" ]; then
+            echo "::error ::FBYQ_BASE_URL or FBYQ_TRIGGER_TOKEN is not configured"
+            exit 1
+          fi
+          URL="${BASE_URL%/}/api/trigger?key=${TRIGGER_TOKEN}"
+          if [ -n "$KIND_INPUT" ]; then URL="${URL}&kind=${KIND_INPUT}"; fi
+          if [ "$DRY_RUN_INPUT" = "true" ]; then URL="${URL}&dryRun=true"; fi
+          tmpbody=$(mktemp)
+          code=$(curl -sS -o "$tmpbody" -w "%{http_code}" "$URL")
+          echo "HTTP $code"
+          cat "$tmpbody"
+          echo
+          if grep -q '"ok":true' "$tmpbody"; then
+            echo "trigger ok"
+          else
+            echo "::error ::trigger returned ok=false"
+            exit 1
+          fi
